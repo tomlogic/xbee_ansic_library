@@ -107,6 +107,36 @@ int start_upload( const char *file)
 	return upload_next_page();
 }
 
+int write_block( const char *file, uint16_t block)
+{
+    if (blocksize == 0)
+    {
+        puts( "Can't start upload until after successful 'info' response.");
+        return -EPERM;
+    }
+
+    if (file == NULL)
+    {
+        return -EINVAL;
+    }
+
+    upload_offset = block * blocksize;
+    if (upload_file != NULL)
+    {
+        fclose( upload_file);
+    }
+    upload_file = fopen( file, "rb");
+    if (upload_file == NULL)
+    {
+        printf( "Error %d, could not open '%s'.\n", errno, file);
+        return -errno;
+    }
+
+    printf( "Uploading '%s' to GPM...\n", file);
+
+    return upload_next_page();
+}
+
 // function receiving GPM responses
 int gpm_response( const wpan_envelope_t FAR *envelope, void FAR *context)
 {
@@ -239,6 +269,7 @@ void print_menu( void)
 	puts( "erase all                      Erase all of GPM.");
 	puts( "erase <block>                  Erase a single block of GPM.");
 	puts( "upload <filename>              Upload file to GPM.");
+    puts( "block <block> <filename>       Upload file to specified block.");
 	puts( "verify                         Verify firmware copied to GPM.");
 	puts( "install                        Install firmware copied to GPM.");
 	puts( "pagesize                       Report on current upload page size.");
@@ -399,10 +430,30 @@ int main( int argc, char *argv[])
 		{
 			process_command( &my_xbee, &cmdstr[2]);
 		}
-	   else
-	   {
-	   	printf( "unknown command: '%s'\n", cmdstr);
-	   }
+      else if (! strncmpi( cmdstr, "block ", 6))
+	  {
+          int i = 6;
+          //find end of block param
+          while((cmdstr[i] != ' ') && (cmdstr[i] != '\0'))i++;
+
+          i++;
+          
+	      if (parse_uint16( params, &cmdstr[6], 1) == 1)
+          {
+              //filename, block, offset
+              printf( "write file %s to block %u\n", &cmdstr[i], params[0]);
+              
+              write_block( &cmdstr[i],  params[0]);
+          }
+          else
+          {
+              printf( "Couldn't parse block number from %s\n", cmdstr);
+          }
+	  }
+	  else
+      {
+        printf( "unknown command: '%s'\n", cmdstr);
+	  }
    }
 }
 
