@@ -34,6 +34,9 @@ FILE *upload_file = NULL;
 uint32_t upload_offset = 0;
 uint16_t upload_pagesize = 128;
 
+uint8_t GPM_command;
+bool_t GPMvalidCmd = FALSE;
+
 int upload_next_page()
 {
 	uint16_t bytecount, maxcount, bytesread;
@@ -62,7 +65,14 @@ int upload_next_page()
 		fclose( upload_file);
 		upload_file = NULL;
 
-		return 0;
+        if(GPMvalidCmd)
+        {
+            exit(0);
+        }
+        else
+        {
+            return 0;
+        }
 	}
 
 	result = xbee_gpm_write( &envelope_self, upload_offset / blocksize,
@@ -277,11 +287,60 @@ void print_menu( void)
 	puts( "");
 }
 
+#define ERRASEALL 1
+#define WRITEBLOCK 2
+
+void parse_args( int argc, char *argv[], xbee_serial_t *serial)
+{
+	uint32_t baud;
+
+	memset( serial, 0, sizeof *serial);
+
+	// default baud rate
+	serial->baudrate = 115200;
+
+    //serial port
+    if (strncmp( argv[1], "/dev", 4) == 0)
+    {
+        strncpy( serial->device, argv[1], (sizeof serial->device) - 1);
+        serial->device[(sizeof serial->device) - 1] = '\0';
+    }
+    
+    //baud rate
+    if ( (baud = (uint32_t) strtoul( argv[2], NULL, 0)) > 0)
+		{
+			serial->baudrate = baud;
+		}
+
+
+    //command
+    if(argc > 3)
+    {
+        printf( "command line %d, %s, %s\n", argc, argv[3], argv[4]);
+        
+        if (strncmp( argv[3], "eraseall", 9) == 0)
+        {
+            GPM_command = ERRASEALL;
+            GPMvalidCmd = TRUE;
+        }
+        else if (strncmp( argv[3], "block", 5) == 0)
+        {
+            GPM_command = WRITEBLOCK;
+            GPMvalidCmd = TRUE;
+        }
+    }
+}
 /*
 	main
 
 	Initiate communication with the XBee module, then accept AT commands from
 	STDIO, pass them to the XBee module and print the result.
+    
+    pass arguments on cmd line for automated processing
+    !! Baud rate must be the last argument!
+    erase; erase all
+    block; write block
+    read read block
 */
 int main( int argc, char *argv[])
 {
@@ -290,7 +349,8 @@ int main( int argc, char *argv[])
 	xbee_serial_t XBEE_SERPORT;
 	uint16_t params[3];
 
-	parse_serial_arguments( argc, argv, &XBEE_SERPORT);
+	//parse_serial_arguments( argc, argv, &XBEE_SERPORT);
+    parse_args( argc, argv, &XBEE_SERPORT);
 
 	// initialize the serial and device layer for this XBee device
 	if (xbee_dev_init( &my_xbee, &XBEE_SERPORT, NULL, NULL))
@@ -298,6 +358,8 @@ int main( int argc, char *argv[])
 		printf( "Failed to initialize device.\n");
 		return 0;
 	}
+    
+    setbuf(stdout, NULL);
 
 	// Initialize the WPAN layer of the XBee device driver.  This layer enables
 	// endpoints and clusters, and is required for all ZigBee layers.
@@ -331,6 +393,42 @@ int main( int argc, char *argv[])
 
 	// get flash info, for use by later commands
 	xbee_gpm_get_flash_info( &envelope_self);
+
+    //wait for info response
+    while(blocksize == 0)
+    {
+        xbee_dev_tick( &my_xbee);
+    }
+    
+    //command passed in on cmd line
+    //exe it and then exit
+    if(GPMvalidCmd)
+    {
+        if(ERRASEALL == GPM_command)
+        {
+            printf( "Erasing GPM (result %d)\n", xbee_gpm_erase_flash( &envelope_self));
+            exit(0);
+        }
+        else if(WRITEBLOCK == GPM_command)
+        {
+            //printf("write block %s %s", argv[4], argv[5]);
+              
+              if (parse_uint16( params, argv[4], 1) == 1)
+              {
+                  //filename, block, offset
+                  printf( "\nwrite file %s to block %u\n\n", argv[5], params[0]);
+                  
+                  //start the block write, see gpm_response() where it calls upload_next_page()
+                  write_block( argv[5],  params[0]);
+              }
+              else
+              {
+                  printf( "Couldn't parse block number from %s\n", cmdstr);
+                  exit(EXIT_FAILURE);
+              }
+        }
+
+    }
 
    while (1)
    {
