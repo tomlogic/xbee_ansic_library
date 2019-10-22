@@ -3,7 +3,6 @@ sudo: false
 branches:
   only:
     - master
-    - Feature/XBCLIB-29-autodeploy-docs-to-github
 
 addons:
   apt:
@@ -22,11 +21,12 @@ before_deploy:
       -out 'travis_deploy_key' -d
       
 deploy:
-  provider: pages
-  deploy_key: travis_deploy_key
-  skip_cleanup: true
-  local_dir: doc/html
+  # opt-in to dpl v2
   edge: true
+  provider: pages:git
+  deploy_key: travis_deploy_key
+  cleanup: false
+  keep_history: false
+  local_dir: doc/html
   on:
     branch: master
-    branch: Feature/XBCLIB-29-autodeploy-docs-to-github
