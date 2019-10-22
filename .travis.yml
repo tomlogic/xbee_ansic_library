@@ -29,3 +29,4 @@ deploy:
   edge: true
   on:
     branch: master
+    branch: Feature/XBCLIB-29-autodeploy-docs-to-github
